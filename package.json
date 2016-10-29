@@ -1,0 +1,25 @@
+{
+  "name": "ghost-worker",
+  "version": "0.0.1",
+  "description": "A library to offline and speed up the redraw of template based website",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ghost-worker/ghost-worker.git"
+  },
+  "keywords": [
+    "ghost-worker",
+    "service-worker",
+    "cache",
+    "offline"
+  ],
+  "author": "Glenn Jones <glennjonesnet@gmail.com> (http://glennjones.net/)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ghost-worker/ghost-worker/issues"
+  },
+  "homepage": "https://github.com/ghost-worker/ghost-worker#readme"
+}
