@@ -1,5 +1,5 @@
 {
-  "name": "ghost-worker",
+  "name": "ghostworker",
   "version": "0.0.1",
   "description": "A library to offline and speed up the redraw of template based website",
   "main": "app.js",
