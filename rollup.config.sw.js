@@ -7,7 +7,7 @@ export default {
     entry: 'lib/serviceworker/index.js',
     dest: 'dist/ghostworker-sw.js',
     format: 'umd',
-    moduleName: 'GhostWorkerSW',
+    moduleName: 'GhostWorker',
     sourceMap: true,
     plugins: [
         resolve({

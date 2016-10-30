@@ -1,7 +1,7 @@
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? factory() :
+	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
 	typeof define === 'function' && define.amd ? define(factory) :
-	(factory());
+	(global.GhostWorker = factory());
 }(this, (function () { 'use strict';
 
 var commonjsGlobal = typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {}
@@ -1011,8 +1011,8 @@ self.addEventListener('message', function (event) {
 });
 
 // Temp
-var GhostWorkerSW = {};
-GhostWorkerSW.version = 0.1;
+var GhostWorker = {};
+GhostWorker.version = 0.1;
 
 self.addEventListener('fetch', function (event) {
 
@@ -1102,7 +1102,7 @@ function fetchAndCache(request, options) {
         // has to a GET with 200 status and not a `raw` request to be caches
         if (request.method === 'GET' && response.status > 199 && response.status < 400 && request.headers.get('X-Ghost-Worker-Content') !== 'raw') {
 
-            caches.open('ghostworker-' + getCacheName(response) + '-v' + GhostWorkerSW.version).then(function (cache) {
+            caches.open('ghostworker-' + getCacheName(response) + '-v' + GhostWorker.version).then(function (cache) {
                 cache.put(request, response);
             });
         }
@@ -1203,121 +1203,52 @@ var data = {
     routes: []
 };
 
-data.site = {
-    templatePath: '/-template',
-    elements: ['.contents'],
-    metaTags: ['description', 'twitter:url', 'twitter:title', 'twitter:description'],
-    linkTags: [{ 'rel': 'canonical' }]
-};
-
-data.routes.push({
-    name: 'About',
-    match: '/about',
-    elements: ['article h1', '.hresume']
-});
-
-data.routes.push({
-    name: 'Projects',
-    match: '/projects',
-    elements: ['article h1', '.e-content']
-});
-
-data.routes.push({
-    name: 'Articles listings',
-    match: ['/articles', '/articles/{item}'],
-    matchFunction: function matchFunction(path, routeData) {
-        return path.indexOf('-') === -1;
-    },
-    elements: ['.page-title', 'article.h-as-post', '.h-paging', '.page-created time']
-});
-
-data.routes.push({
-    name: 'Articles',
-    match: '/articles/{item}',
-    matchFunction: function matchFunction(path, routeData) {
-        return path.indexOf('-') > -1;
-    },
-    elements: ['.p-name', '.e-content', '.dateline', '.tag-list']
-});
-
-data.routes.push({
-    name: 'Note listings',
-    addAttributes: [{
-        selector: 'ul.content-menu li:nth-child(2)',
-        class: 'active'
-    }],
-    match: ['/notes', '/notes/{item}'],
-    matchFunction: function matchFunction(path, routeData) {
-        return path.indexOf('-') === -1;
-    },
-    elements: ['.page-title', 'article.h-as-note', '.h-paging', '.page-created time']
-});
-
-data.routes.push({
-    name: 'Notes',
-    addAttributes: [{
-        selector: 'ul.content-menu li:nth-child(2)',
-        class: 'active'
-    }],
-    match: '/notes/{item}',
-    matchFunction: function matchFunction(path, routeData) {
-        return path.indexOf('-') > -1;
-    },
-    elements: ['.reply-to', 'h1.e-content', '.detail-link', '.reply-to', '.likes', '.syndications']
-});
-
-data.routes.push({
-    name: 'Code listings',
-    templatePath: '/code/-list-template',
-    match: '/code/',
-    elements: ['.page-title', 'article.h-as-note', 'h-paging', '.page-created time']
-});
-
-data.routes.push({
-    name: 'Code',
-    templatePath: '/code/-detail-template',
-    match: '/code/{item}',
-    elements: ['h1', '#summary', '#example']
-});
-
 var router = new HAPIRouter.Router();
 var routeKey = 1;
 var routeMap = {};
 
-// auto add title element
-if (data.site.elements.indexOf('title') === -1) {
-    data.site.elements.unshift('title');
-}
-
-data.routes.forEach(function (route) {
-
-    if (!route.templatePath && route.name) {
-        route.templatePath = '/-' + slugify(route.name) + '-template';
-    }
-
-    if (!Array.isArray(route.match)) {
-        route.match = [route.match];
-    }
-    // check title is always included
-    route.elements = route.elements || [];
-
-    // auto add title element
-    if (route.elements.indexOf('title') === -1) {
-        route.elements.unshift('title');
-    }
-
-    route.match.forEach(function (match) {
-        var match = Utils.removeLastBackslash(match);
-        if (!router.route('get', match)) {
-            // add route with key so we can match more than one object
-            router.add({ method: 'get', path: match }, routeKey);
-            routeMap[routeKey] = [route];
-            routeKey++;
-        } else {
-            routeMap[router.route('get', match).route].push(route);
+GhostWorker.site = function (options) {
+    if (options.template) {
+        data.site = options.template;
+        if (data.site.elements.indexOf('title') === -1) {
+            data.site.elements.unshift('title');
         }
-    });
-});
+    }
+};
+
+GhostWorker.section = function (options) {
+
+    if (options.template) {
+        var route = options.template;
+
+        if (!route.templatePath && route.name) {
+            route.templatePath = '/-' + slugify(route.name) + '-template';
+        }
+
+        if (!Array.isArray(route.match)) {
+            route.match = [route.match];
+        }
+        // check title is always included
+        route.elements = route.elements || [];
+
+        // auto add title element
+        if (route.elements.indexOf('title') === -1) {
+            route.elements.unshift('title');
+        }
+
+        route.match.forEach(function (match) {
+            var match = Utils.removeLastBackslash(match);
+            if (!router.route('get', match)) {
+                // add route with key so we can match more than one object
+                router.add({ method: 'get', path: match }, routeKey);
+                routeMap[routeKey] = [route];
+                routeKey++;
+            } else {
+                routeMap[router.route('get', match).route].push(route);
+            }
+        });
+    }
+};
 
 function slugify(str) {
     str = str.replace(/^\s+|\s+$/g, ''); // trim
@@ -1337,15 +1268,7 @@ function slugify(str) {
     return str;
 };
 
-/*
-    removeAttributes: [{
-        selector: 'ul.content-menu',
-        class: 'active'
-    },{
-        selector: 'ul.meta-menu',
-        class: 'active'
-    }],
-    */
+return GhostWorker;
 
 })));
 //# sourceMappingURL=ghostworker-sw.js.map
