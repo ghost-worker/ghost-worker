@@ -1117,6 +1117,8 @@ function getCacheName(response) {
 
     var cacheType = 'other';
     if (response && response.headers) {
+        var name;
+
         (function () {
             var contentType = response.headers.get('Content-Type');
             if (contentType.indexOf(';') > -1) {
@@ -1152,11 +1154,13 @@ function getCacheName(response) {
 
                 if (cacheType === 'application' || cacheType === 'text') {
                     for (name in contentMimeTypes) {
-                        contentMimeTypes[name].forEach(function (mimeType) {
-                            if (mimeType === contentType) {
-                                cacheType = name;
-                            }
-                        });
+                        if (contentMimeTypes.hasOwnProperty(name)) {
+                            contentMimeTypes[name].forEach(function (mimeType) {
+                                if (mimeType === contentType) {
+                                    cacheType = name;
+                                }
+                            });
+                        }
                     }
                 }
             }

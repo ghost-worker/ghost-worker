@@ -48,34 +48,6 @@ var utils = createCommonjsModule(function (module) {
         return lastIndex !== -1 && lastIndex === position;
     }
 
-    function getRouteData(url) {
-        if (sendMessage) {
-            sendMessage(JSON.stringify({ 'command': 'getRouteData', 'url': url }));
-        }
-
-        var targetUrl = new URL(url);
-        var targetRoute = router.route('get', targetUrl.pathname);
-
-        if (targetRoute) {
-            // use key to get array of matches from routeMap
-            var matchingRoutes = routeMap[targetRoute.route];
-
-            if (matchingRoutes.length > 1) {
-                var out = null;
-                matchingRoutes.forEach(function (route) {
-                    if (route.matchFunction && route.matchFunction(targetUrl.pathname, targetRoute)) {
-                        out = route;
-                    }
-                });
-                return out;
-            }
-            if (matchingRoutes.length === 1) {
-                return matchingRoutes[0];
-            }
-        }
-        return null;
-    }
-
     function clone(obj) {
         // very simple clone, be careful
         return JSON.parse(JSON.stringify(obj));
@@ -95,7 +67,6 @@ var utils = createCommonjsModule(function (module) {
         urlReplacePath: urlReplacePath,
         urlRemoveBackslash: urlRemoveBackslash,
         endsWith: endsWith,
-        getRouteData: getRouteData,
         clone: clone,
         handleErrors: handleErrors
     };
@@ -1233,9 +1204,11 @@ var GhostWorkerDOM = function () {
         if (json.linkTags) {
             json.linkTags.forEach(function (link) {
                 var selector = 'link';
-                for (attr in link) {
-                    if (attr !== 'href') {
-                        selector += '[' + attr + '="' + link[attr] + '"]';
+                for (var attr in link) {
+                    if (link.hasOwnProperty(attr)) {
+                        if (attr !== 'href') {
+                            selector += '[' + attr + '="' + link[attr] + '"]';
+                        }
                     }
                 }
                 var node = document.querySelector(selector);
