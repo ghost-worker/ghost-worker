@@ -118,9 +118,19 @@ var messaging = createCommonjsModule(function (module) {
         });
     }
 
+    function getVersion() {
+
+        return getDataFromSW({ 'command': 'getVersion' }).then(function (response) {
+            return response.result;
+        }).catch(function (reason) {
+            console.log(reason);
+        });
+    }
+
     module.exports = {
         getRouteData: getRouteData,
-        getSiteData: getSiteData
+        getSiteData: getSiteData,
+        getVersion: getVersion
     };
 });
 
@@ -786,10 +796,19 @@ var PatchDOM = interopDefault(index);
 var GhostWorkerDOM = function () {
 
     var m = {};
-    m.version = 0.1;
+    m.version = null;
     m.cacheName = 'ghostworker';
     m.contentEvent = new Event('GhostWorkerLoaded');
     m.contentDOMLoadedEvent = new Event('GhostWorkerDOMContentLoaded');
+
+    m.getVersion = function () {
+
+        var self = this;
+        return Messaging.getVersion().then(function (version) {
+            self.version = version;
+            return version;
+        });
+    };
 
     m.create = function () {
 
@@ -861,7 +880,7 @@ var GhostWorkerDOM = function () {
             headers.append('X-Ghost-Worker-Cache-Date', new Date().toISOString());
             self.jsonRequest = self.newRequest(Utils.urlJoinPath(url, '-json'), { 'headers': headers });
             self.jsonResponse = self.newResponse(JSON.stringify(out), 'application/json');
-            self.put(self.cacheName + '-content-v' + self.version, self.jsonRequest, self.jsonResponse);
+            self.put(self.cacheName + '-' + routeData.slug + '-v' + routeData.version, self.jsonRequest, self.jsonResponse);
 
             return out;
         }).catch(function (reason) {
@@ -893,27 +912,11 @@ var GhostWorkerDOM = function () {
             headers.append('X-Ghost-Worker-Cache-Date', new Date().toISOString());
             self.templateRequest = self.newRequest(Utils.urlReplacePath(url, routeData.templatePath), { 'headers': headers });
             self.templateResponse = self.newResponse(newDoc.outerHTML, 'text/html');
-            self.put(self.cacheName + '-template-v' + self.version, self.templateRequest, self.templateResponse);
+            self.put(self.cacheName + '-template-v' + routeData.version, self.templateRequest, self.templateResponse);
             return newDoc.outerHTML;
         }).catch(function (reason) {
             console.log('createTemplate' + reason);
         });
-
-        /*
-        routeData = routeData || Messaging.getRouteData( url );
-        var newDoc = document.documentElement.cloneNode(true);
-        this.removeGhostworkerScript(newDoc);
-        this.clearElements(newDoc, routeData.elements);
-        // remove meta and link values from page that need updating with data
-        this.loopMetaTags(siteData, routeData, newDoc, true);
-        this.loopLinkTags(siteData, routeData, newDoc, true);
-         var headers = new Headers();
-        headers.append('X-Ghost-Worker-Cache-Date',  new Date().toISOString());
-        this.templateRequest = this.newRequest( Utils.urlReplacePath(url, routeData.templatePath), {'headers': headers});
-        this.templateResponse = this.newResponse(newDoc.outerHTML, 'text/html');
-        this.put( this.cacheName + '-template-v' + this.version, this.templateRequest, this.templateResponse );
-        return newDoc.outerHTML;
-        */
     };
 
     m.clearElements = function (document, elements) {
@@ -1120,17 +1123,6 @@ var GhostWorkerDOM = function () {
 
     // get  -json or -template responses from cache
     m.match = function (request, suffix) {
-
-        /*
-        url = url || document.location.href;
-        suffix = suffix || - '-json';
-        var request;
-        if(suffix === '-json'){
-            request = this.newRequest(Utils.urlJoinPath(url, suffix), {});
-        }else{
-            request = this.newRequest(Utils.urlReplacePath(url, suffix), {});
-        }
-        */
 
         return window.caches.match(request).then(function (response) {
 
