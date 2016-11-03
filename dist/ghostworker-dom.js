@@ -13,63 +13,89 @@ function createCommonjsModule(fn, module) {
 }
 
 var utils = createCommonjsModule(function (module) {
-    'use strict';
+  'use strict';
 
-    function removeLastBackslash(path) {
-        return endsWith(path, '/') ? path.slice(0, -1) : path;
+  function removeLastBackslash(path) {
+    return endsWith(path, '/') ? path.slice(0, -1) : path;
+  }
+
+  function urlJoinPath(url, path) {
+    url = new URL(url);
+    url.pathname = url.pathname + path;
+    return url.toString();
+  }
+
+  function urlReplacePath(url, path) {
+    url = new URL(url);
+    url.pathname = path;
+    return url.toString();
+  }
+
+  function urlRemoveBackslash(url) {
+    url = new URL(url);
+    if (endsWith(url.pathname, '/')) {
+      url.pathname = url.pathname.slice(0, -1);
     }
+    return url.toString();
+  }
 
-    function urlJoinPath(url, path) {
-        url = new URL(url);
-        url.pathname = url.pathname + path;
-        return url.toString();
+  function endsWith(str, match, position) {
+    if (typeof position !== 'number' || !isFinite(position) || Math.floor(position) !== position || position > str.length) {
+      position = str.length;
     }
+    position -= match.length;
+    var lastIndex = str.lastIndexOf(match, position);
+    return lastIndex !== -1 && lastIndex === position;
+  }
 
-    function urlReplacePath(url, path) {
-        url = new URL(url);
-        url.pathname = path;
-        return url.toString();
-    }
+  function clone(obj) {
+    // very simple clone, be careful
+    return JSON.parse(JSON.stringify(obj));
+  }
 
-    function urlRemoveBackslash(url) {
-        url = new URL(url);
-        if (endsWith(url.pathname, '/')) {
-            url.pathname = url.pathname.slice(0, -1);
+  if (typeof Object.assign != 'function') {
+    (function () {
+      Object.assign = function (target) {
+        'use strict';
+        // We must check against these specific cases.
+
+        if (target === undefined || target === null) {
+          throw new TypeError('Cannot convert undefined or null to object');
         }
-        return url.toString();
-    }
 
-    function endsWith(str, match, position) {
-        if (typeof position !== 'number' || !isFinite(position) || Math.floor(position) !== position || position > str.length) {
-            position = str.length;
+        var output = Object(target);
+        for (var index = 1; index < arguments.length; index++) {
+          var source = arguments[index];
+          if (source !== undefined && source !== null) {
+            for (var nextKey in source) {
+              if (source.hasOwnProperty(nextKey)) {
+                output[nextKey] = source[nextKey];
+              }
+            }
+          }
         }
-        position -= match.length;
-        var lastIndex = str.lastIndexOf(match, position);
-        return lastIndex !== -1 && lastIndex === position;
-    }
+        return output;
+      };
+    })();
+  }
 
-    function clone(obj) {
-        // very simple clone, be careful
-        return JSON.parse(JSON.stringify(obj));
+  // handles fetch errs
+  function handleErrors(response) {
+    if (!response.ok) {
+      throw Error(response.statusText);
     }
+    return response;
+  }
 
-    // handles fetch errs
-    function handleErrors(response) {
-        if (!response.ok) {
-            throw Error(response.statusText);
-        }
-        return response;
-    }
-
-    module.exports = {
-        removeLastBackslash: removeLastBackslash,
-        urlJoinPath: urlJoinPath,
-        urlReplacePath: urlReplacePath,
-        urlRemoveBackslash: urlRemoveBackslash,
-        endsWith: endsWith,
-        clone: clone,
-        handleErrors: handleErrors
-    };
+  module.exports = {
+    removeLastBackslash: removeLastBackslash,
+    urlJoinPath: urlJoinPath,
+    urlReplacePath: urlReplacePath,
+    urlRemoveBackslash: urlRemoveBackslash,
+    endsWith: endsWith,
+    clone: clone,
+    handleErrors: handleErrors
+  };
 });
 
 var Utils = interopDefault(utils);
@@ -78,10 +104,7 @@ var messaging = createCommonjsModule(function (module) {
     'use strict';
 
     function getDataFromSW(requestOptions) {
-        // This wraps the message posting/response in a promise, which will resolve if the response doesn't
-        // contain an error, and reject with the error if it does. If you'd prefer, it's possible to call
-        // controller.postMessage() and set up the onmessage handler independently of a promise, but this is
-        // a convenient wrapper.
+
         return new Promise(function (resolve, reject) {
             var messageChannel = new MessageChannel();
             messageChannel.port1.onmessage = function (event) {
@@ -91,11 +114,6 @@ var messaging = createCommonjsModule(function (module) {
                     resolve(event.data);
                 }
             };
-
-            // This sends the message data as well as transferring messageChannel.port2 to the service worker.
-            // The service worker can then use the transferred port to reply via postMessage(), which
-            // will in turn trigger the onmessage handler on messageChannel.port1.
-            // See https://html.spec.whatwg.org/multipage/workers.html#dom-worker-postmessage
             navigator.serviceWorker.controller.postMessage(requestOptions, [messageChannel.port2]);
         });
     }
@@ -135,6 +153,118 @@ var messaging = createCommonjsModule(function (module) {
 });
 
 var Messaging = interopDefault(messaging);
+
+var head = createCommonjsModule(function (module) {
+    'use strict';
+
+    var siteWideLinkTags = ['stylesheet', 'manifest'];
+    var siteWideMetaTags = ['viewport', 'handheldfriendly', 'mobileoptimized', 'apple-mobile-web-app-capable', 'apple-mobile-web-app-status-bar-style'];
+
+    function remove(headNode) {
+
+        return {
+            link: removeElements(headNode, 'link', 'rel', siteWideLinkTags),
+            meta: removeElements(headNode, 'meta', 'name', siteWideMetaTags)
+        };
+    }
+
+    function removeElements(headNode, selector, checkAttr, keepList) {
+
+        var out = [];
+        var nodeList = headNode.querySelectorAll(selector);
+        var _iteratorNormalCompletion = true;
+        var _didIteratorError = false;
+        var _iteratorError = undefined;
+
+        try {
+            for (var _iterator = nodeList[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+                var node = _step.value;
+
+                if (isOnKeepList(node, checkAttr, keepList) === false) {
+                    out.push(elementAttributes(node));
+                    headNode.removeChild(node);
+                }
+            }
+        } catch (err) {
+            _didIteratorError = true;
+            _iteratorError = err;
+        } finally {
+            try {
+                if (!_iteratorNormalCompletion && _iterator.return) {
+                    _iterator.return();
+                }
+            } finally {
+                if (_didIteratorError) {
+                    throw _iteratorError;
+                }
+            }
+        }
+
+        return out;
+    }
+
+    function elementAttributes(node) {
+
+        var out = {};
+        var attrs = node.attributes;
+        for (var i = attrs.length - 1; i >= 0; i--) {
+            out[attrs[i].name] = attrs[i].value;
+        }
+        return out;
+    }
+
+    function isOnKeepList(node, checkAttr, keepList) {
+
+        var keep = false;
+        if (node.hasAttribute(checkAttr)) {
+            (function () {
+                var value = node.getAttribute(checkAttr).toLowerCase();
+                if (value.indexOf(' ') > -1) {
+                    value = value.split(' ');
+                } else {
+                    value = [value];
+                }
+                keepList.forEach(function (item) {
+                    if (value.indexOf(item) > -1) {
+                        keep = true;
+                    }
+                });
+            })();
+        }
+        return keep;
+    }
+
+    function patch(headNode, patch) {
+
+        ['link', 'patch'].forEach(function (tagName) {
+            if (patch[tagName]) {
+                patch[tagName].forEach(function (attributes) {
+                    addNode(headNode, tagName, attributes);
+                });
+            }
+        });
+    }
+
+    function addNode(parentNode, tagName, attributes) {
+
+        var newNode = document.createElement(tagName);
+        for (var key in attributes) {
+            if (attributes.hasOwnProperty(key)) {
+                newNode.setAttribute(key, attributes[key]);
+            }
+        }
+        parentNode.appendChild(newNode);
+    }
+
+    module.exports = {
+        remove: remove,
+        patch: patch,
+        siteWideLinkTags: siteWideLinkTags,
+        siteWideMetaTags: siteWideMetaTags
+    };
+});
+
+var Head = interopDefault(head);
 
 var index = createCommonjsModule(function (module) {
 'use strict';
@@ -796,19 +926,9 @@ var PatchDOM = interopDefault(index);
 var GhostWorkerDOM = function () {
 
     var m = {};
-    m.version = null;
     m.cacheName = 'ghostworker';
     m.contentEvent = new Event('GhostWorkerLoaded');
     m.contentDOMLoadedEvent = new Event('GhostWorkerDOMContentLoaded');
-
-    m.getVersion = function () {
-
-        var self = this;
-        return Messaging.getVersion().then(function (version) {
-            self.version = version;
-            return version;
-        });
-    };
 
     m.create = function () {
 
@@ -872,9 +992,7 @@ var GhostWorkerDOM = function () {
                 }
                 out.replacements.push(item);
             });
-
-            out.metaTags = self.loopMetaTags(siteData, routeData, doc, false);
-            out.linkTags = self.loopLinkTags(siteData, routeData, doc, false);
+            Object.assign(out, Head.remove(doc.querySelector('head')));
 
             var headers = new Headers();
             headers.append('X-Ghost-Worker-Cache-Date', new Date().toISOString());
@@ -884,7 +1002,7 @@ var GhostWorkerDOM = function () {
 
             return out;
         }).catch(function (reason) {
-            console.log('createJSON' + reason);
+            console.log('createJSON: ' + reason);
         });
 
         //return out;
@@ -904,9 +1022,9 @@ var GhostWorkerDOM = function () {
             var newDoc = document.documentElement.cloneNode(true);
             self.removeGhostworkerScript(newDoc);
             self.clearElements(newDoc, routeData.elements);
+
             // remove meta and link values from page that need updating with data
-            self.loopMetaTags(siteData, routeData, newDoc, true);
-            self.loopLinkTags(siteData, routeData, newDoc, true);
+            Head.remove(newDoc.querySelector('head'));
 
             var headers = new Headers();
             headers.append('X-Ghost-Worker-Cache-Date', new Date().toISOString());
@@ -915,7 +1033,7 @@ var GhostWorkerDOM = function () {
             self.put(self.cacheName + '-template-v' + routeData.version, self.templateRequest, self.templateResponse);
             return newDoc.outerHTML;
         }).catch(function (reason) {
-            console.log('createTemplate' + reason);
+            console.log('createTemplate: ' + reason);
         });
     };
 
@@ -931,65 +1049,6 @@ var GhostWorkerDOM = function () {
                 }
             });
         }
-    };
-
-    // <meta> tag data collection and value blanking
-    m.loopMetaTags = function (siteData, routeData, doc, removeValues) {
-        var out = null;
-        var metaNames = siteData.metaTags || [];
-        if (routeData && routeData.metaTags) {
-            metaNames.concat(routeData.metaTags);
-        }
-        var nodeList = doc.querySelectorAll('meta');
-        if (nodeList) {
-            for (var i = 0; i < nodeList.length; ++i) {
-                if (nodeList[i].name && nodeList[i].content) {
-                    var name = nodeList[i].name;
-                    if (metaNames.indexOf(name) > -1) {
-
-                        out = out || {};
-                        out[name] = nodeList[i].content;
-
-                        if (removeValues === true) {
-                            nodeList[i].content = '';
-                        }
-                    }
-                }
-            }
-        }
-        return out;
-    };
-
-    // <link> tag data collection and value blanking
-    m.loopLinkTags = function (siteData, routeData, doc, removeValues) {
-        var out = null;
-        var links = siteData.linkTags || [];
-        if (routeData && routeData.linkTag) {
-            links.concat(routeData.linkTag);
-        }
-        // link[{attr:value}]
-        links.forEach(function (link) {
-            var selector = 'link';
-            for (var attrKey in link) {
-                if (attrKey.hasOwnProperty(link)) {
-                    selector += '[' + attrKey + '="' + link[attrKey] + '"]';
-                }
-            }
-            var node = doc.querySelector(selector);
-            if (node && node.href) {
-
-                var letNewlink = Utils.clone(link);
-                letNewlink.href = node.href;
-                out = out || [];
-                out.push(letNewlink);
-
-                if (removeValues === true) {
-                    node.href = '';
-                }
-            }
-        });
-
-        return out;
     };
 
     m.removeGhostworkerScript = function (doc) {
@@ -1058,9 +1117,7 @@ var GhostWorkerDOM = function () {
                 if (siteData && redrawLevel === 'site') {
                     // default to site template
                     self.clearElements(document, siteData.elements);
-                    // remove meta and link values from page that need updating with data
-                    self.loopMetaTags(siteData, routeData, document, true);
-                    self.loopLinkTags(siteData, routeData, document, true);
+                    Head.remove(document.querySelector('head'));
 
                     // load template from cache
                     var templateRequest = self.newRequest(Utils.urlReplacePath(url, routeData.templatePath), {});
@@ -1167,7 +1224,6 @@ var GhostWorkerDOM = function () {
             if (nodeList) {
                 for (var i = 0; i < nodeList.length; ++i) {
                     if (replacement.content[i]) {
-                        //nodeList[i].outerHTML = replacement.content[i];
 
                         // on update this should patch direct from one DOM node to another rather than using JSON html
                         PatchDOM(nodeList[i], replacement.content[i]);
@@ -1181,35 +1237,11 @@ var GhostWorkerDOM = function () {
             }
         });
 
-        // meta
-        if (json.metaTags) {
-            for (name in json.metaTags) {
-                var selector = 'meta[name="' + name + '"]';
-                var node = document.querySelector(selector);
-                if (node && node.content) {
-                    node.content = json.metaTags[name];
-                }
-            }
-        }
-
-        // link
-        if (json.linkTags) {
-            json.linkTags.forEach(function (link) {
-                var selector = 'link';
-                for (var attr in link) {
-                    if (link.hasOwnProperty(attr)) {
-                        if (attr !== 'href') {
-                            selector += '[' + attr + '="' + link[attr] + '"]';
-                        }
-                    }
-                }
-                var node = document.querySelector(selector);
-                if (node && node.href && link.href) {
-                    node.href = link.href;
-                }
-            });
-        }
-
+        var patchInstructions = {
+            link: json.link,
+            meta: json.meta
+        };
+        Head.patch(document.querySelector('head'), patchInstructions);
         this.captureLinks();
     };
 

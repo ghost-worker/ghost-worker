@@ -15,63 +15,89 @@ function createCommonjsModule(fn, module) {
 }
 
 var utils = createCommonjsModule(function (module) {
-    'use strict';
+  'use strict';
 
-    function removeLastBackslash(path) {
-        return endsWith(path, '/') ? path.slice(0, -1) : path;
+  function removeLastBackslash(path) {
+    return endsWith(path, '/') ? path.slice(0, -1) : path;
+  }
+
+  function urlJoinPath(url, path) {
+    url = new URL(url);
+    url.pathname = url.pathname + path;
+    return url.toString();
+  }
+
+  function urlReplacePath(url, path) {
+    url = new URL(url);
+    url.pathname = path;
+    return url.toString();
+  }
+
+  function urlRemoveBackslash(url) {
+    url = new URL(url);
+    if (endsWith(url.pathname, '/')) {
+      url.pathname = url.pathname.slice(0, -1);
     }
+    return url.toString();
+  }
 
-    function urlJoinPath(url, path) {
-        url = new URL(url);
-        url.pathname = url.pathname + path;
-        return url.toString();
+  function endsWith(str, match, position) {
+    if (typeof position !== 'number' || !isFinite(position) || Math.floor(position) !== position || position > str.length) {
+      position = str.length;
     }
+    position -= match.length;
+    var lastIndex = str.lastIndexOf(match, position);
+    return lastIndex !== -1 && lastIndex === position;
+  }
 
-    function urlReplacePath(url, path) {
-        url = new URL(url);
-        url.pathname = path;
-        return url.toString();
-    }
+  function clone(obj) {
+    // very simple clone, be careful
+    return JSON.parse(JSON.stringify(obj));
+  }
 
-    function urlRemoveBackslash(url) {
-        url = new URL(url);
-        if (endsWith(url.pathname, '/')) {
-            url.pathname = url.pathname.slice(0, -1);
+  if (typeof Object.assign != 'function') {
+    (function () {
+      Object.assign = function (target) {
+        'use strict';
+        // We must check against these specific cases.
+
+        if (target === undefined || target === null) {
+          throw new TypeError('Cannot convert undefined or null to object');
         }
-        return url.toString();
-    }
 
-    function endsWith(str, match, position) {
-        if (typeof position !== 'number' || !isFinite(position) || Math.floor(position) !== position || position > str.length) {
-            position = str.length;
+        var output = Object(target);
+        for (var index = 1; index < arguments.length; index++) {
+          var source = arguments[index];
+          if (source !== undefined && source !== null) {
+            for (var nextKey in source) {
+              if (source.hasOwnProperty(nextKey)) {
+                output[nextKey] = source[nextKey];
+              }
+            }
+          }
         }
-        position -= match.length;
-        var lastIndex = str.lastIndexOf(match, position);
-        return lastIndex !== -1 && lastIndex === position;
-    }
+        return output;
+      };
+    })();
+  }
 
-    function clone(obj) {
-        // very simple clone, be careful
-        return JSON.parse(JSON.stringify(obj));
+  // handles fetch errs
+  function handleErrors(response) {
+    if (!response.ok) {
+      throw Error(response.statusText);
     }
+    return response;
+  }
 
-    // handles fetch errs
-    function handleErrors(response) {
-        if (!response.ok) {
-            throw Error(response.statusText);
-        }
-        return response;
-    }
-
-    module.exports = {
-        removeLastBackslash: removeLastBackslash,
-        urlJoinPath: urlJoinPath,
-        urlReplacePath: urlReplacePath,
-        urlRemoveBackslash: urlRemoveBackslash,
-        endsWith: endsWith,
-        clone: clone,
-        handleErrors: handleErrors
-    };
+  module.exports = {
+    removeLastBackslash: removeLastBackslash,
+    urlJoinPath: urlJoinPath,
+    urlReplacePath: urlReplacePath,
+    urlRemoveBackslash: urlRemoveBackslash,
+    endsWith: endsWith,
+    clone: clone,
+    handleErrors: handleErrors
+  };
 });
 
 var Utils = interopDefault(utils);
@@ -986,7 +1012,7 @@ var HAPIRouter = interopDefault(router);
 
 var internals = {
 
-    version: 0.1,
+    version: '0.1',
     site: {},
     routes: [],
     router: new HAPIRouter.Router(),
@@ -1133,6 +1159,10 @@ var internals = {
         return null;
     },
 
+    isValidCache: function isValidCache(cacheName) {
+        return cacheName.indexOf('ghostworker-') === 0 && Utils.endsWith(cacheName, 'v' + this.version);
+    },
+
     addSiteOptions: function addSiteOptions(options) {
 
         var self = internals;
@@ -1143,6 +1173,9 @@ var internals = {
             self.site = options.template;
             if (self.site.elements.indexOf('title') === -1) {
                 self.site.elements.unshift('title');
+            }
+            if (!options.template.templatePath) {
+                self.site.templatePath = '/-template';
             }
         }
     },
@@ -1184,6 +1217,24 @@ var internals = {
     }
 
 };
+
+self.addEventListener('activate', function (event) {
+
+    // delete any caches that have the wrong version number
+    var self = internals;
+    event.waitUntil(caches.keys().then(function (keys) {
+        return Promise.all(keys.map(function (key) {
+            if (!self.isValidCache(key)) {
+                console.log('delete', key);
+                return caches.delete(key);
+            } else {
+                console.log('keep', key);
+            }
+        }));
+    }).then(function () {
+        console.log('GhostWorker activated cache: v' + self.version);
+    }));
+});
 
 self.addEventListener('message', function (event) {
     //console.log('Handling message event:', event);
@@ -1267,6 +1318,12 @@ var index = {
     site: internals.addSiteOptions,
     section: internals.addSectionOptions
 };
+
+/*
+self.addEventListener('install', listeners.installListener);
+self.addEventListener('activate', listeners.activateListener);
+self.addEventListener('fetch', listeners.fetchListener);
+*/
 
 return index;
 
