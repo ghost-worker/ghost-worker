@@ -1,7 +1,7 @@
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
+	typeof exports === 'object' && typeof module !== 'undefined' ? factory() :
 	typeof define === 'function' && define.amd ? define(factory) :
-	(global.GhostWorker = factory());
+	(factory());
 }(this, (function () { 'use strict';
 
 var commonjsGlobal = typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {}
@@ -1013,7 +1013,7 @@ var HAPIRouter = interopDefault(router);
 var internals = {
 
     version: '0.1',
-    site: {},
+    baseTemplates: [],
     routes: [],
     router: new HAPIRouter.Router(),
     routeKey: 1,
@@ -1042,6 +1042,7 @@ var internals = {
     },
 
     // fetch and then cache successful responses
+    // only if 2xx status code is returned and not if its has header X-GhostWorker-Content === raw
     fetchAndCache: function fetchAndCache(request, options) {
 
         var self = this;
@@ -1049,7 +1050,7 @@ var internals = {
         return fetch(request.clone()).then(function (response) {
             var requestURL = new URL(request.url);
             // has to a GET with 200 status and not a `raw` request to be caches
-            if (request.method === 'GET' && response.status > 199 && response.status < 400 && request.headers.get('X-Ghost-Worker-Content') !== 'raw') {
+            if (request.method === 'GET' && response.status > 199 && response.status < 400 && request.headers.get('X-GhostWorker-Content') !== 'raw') {
                 caches.open('ghostworker-' + self.getCacheName(response) + '-v' + self.version).then(function (cache) {
                     cache.put(request, response);
                 });
@@ -1060,6 +1061,7 @@ var internals = {
         });
     },
 
+    // gets the correct cache based on Content-Type of request
     getCacheName: function getCacheName(response) {
 
         var cacheType = 'other';
@@ -1117,6 +1119,7 @@ var internals = {
         return cacheType;
     },
 
+    // creates a simple slug of text for use in urls
     slugify: function slugify(str) {
         str = str.replace(/^\s+|\s+$/g, ''); // trim
         str = str.toLowerCase();
@@ -1135,6 +1138,7 @@ var internals = {
         return str;
     },
 
+    // gets route data based on paths in routing table and pathMatchFunction
     getRouteData: function getRouteData(url) {
 
         var targetUrl = new URL(url);
@@ -1146,7 +1150,7 @@ var internals = {
             if (matchingRoutes.length > 1) {
                 var out = null;
                 matchingRoutes.forEach(function (route) {
-                    if (route.matchFunction && route.matchFunction(targetUrl.pathname, targetRoute)) {
+                    if (route.pathMatchFunction && route.pathMatchFunction(targetUrl.pathname, targetRoute)) {
                         out = route;
                     }
                 });
@@ -1159,61 +1163,65 @@ var internals = {
         return null;
     },
 
+    // checks version number of cache to make sure it still valid
     isValidCache: function isValidCache(cacheName) {
         return cacheName.indexOf('ghostworker-') === 0 && Utils.endsWith(cacheName, 'v' + this.version);
     },
 
+    // external interface for adding site level options
     addSiteOptions: function addSiteOptions(options) {
 
         var self = internals;
         if (options.version) {
             self.version = options.version;
         }
-        if (options.template) {
-            self.site = options.template;
-            if (self.site.elements.indexOf('title') === -1) {
-                self.site.elements.unshift('title');
-            }
-            if (!options.template.templatePath) {
-                self.site.templatePath = '/-template';
-            }
+        if (Array.isArray(options.template) === false) {
+            options.template = [options.template];
         }
+        options.template.forEach(function (template) {
+            if (template.elements.indexOf('title') === -1) {
+                template.elements.unshift('title');
+            }
+            if (!template.templatePath) {
+                if (template.name) {
+                    template.templatePath = '/-base-' + self.slugify(template.name) + '-template';
+                } else {
+                    template.templatePath = '/-base-template';
+                }
+            }
+            self.baseTemplates.push(template);
+        });
     },
 
+    // external interface for adding section level options
     addSectionOptions: function addSectionOptions(options) {
 
         var self = internals;
-        if (options.template) {
-            var route = options.template;
+        var route = options.template;
 
-            if (!route.templatePath && route.name) {
-                route.templatePath = '/-' + self.slugify(route.name) + '-template';
-            }
-            route.slug = self.slugify(route.name);
-
-            if (!Array.isArray(route.match)) {
-                route.match = [route.match];
-            }
-            // check title is always included
-            route.elements = route.elements || [];
-
-            // auto add title element
-            if (route.elements.indexOf('title') === -1) {
-                route.elements.unshift('title');
-            }
-
-            route.match.forEach(function (match) {
-                var match = Utils.removeLastBackslash(match);
-                if (!self.router.route('get', match)) {
-                    // add route with key so we can match more than one object
-                    self.router.add({ method: 'get', path: match }, self.routeKey);
-                    self.routeMap[self.routeKey] = [route];
-                    self.routeKey++;
-                } else {
-                    self.routeMap[self.router.route('get', match).route].push(route);
-                }
-            });
+        if (!options.template.templatePath && options.name) {
+            options.template.templatePath = '/-' + self.slugify(options.name) + '-template';
         }
+        options.template.slug = self.slugify(options.name);
+        options.template.elements = options.template.elements || [];
+        if (options.template.elements.indexOf('title') === -1) {
+            options.template.elements.unshift('title');
+        }
+
+        if (!Array.isArray(options.path)) {
+            options.path = [options.path];
+        }
+        options.path.forEach(function (path) {
+            var path = Utils.removeLastBackslash(path);
+            if (!self.router.route('get', path)) {
+                // add route with key so we can match more than one object
+                self.router.add({ method: 'get', path: path }, self.routeKey);
+                self.routeMap[self.routeKey] = [options];
+                self.routeKey++;
+            } else {
+                self.routeMap[self.router.route('get', path).route].push(options);
+            }
+        });
     }
 
 };
@@ -1241,19 +1249,35 @@ self.addEventListener('message', function (event) {
 
     var self = internals;
     var msgPackage = Utils.clone(event.data);
+    msgPackage.result = {};
     switch (msgPackage.command) {
         // This command returns a list of the URLs corresponding to the Request objects
         // that serve as keys for the current cache.
         case 'getRouteData':
             if (msgPackage.url) {
-                msgPackage.result = self.getRouteData(msgPackage.url);
-                msgPackage.result.version = self.version;
+                (function () {
+                    var routeData = self.getRouteData(msgPackage.url);
+                    // find base template by name
+                    if (routeData.baseTemplate) {
+                        self.baseTemplates.forEach(function (baseTemplate) {
+                            if (baseTemplate.name && baseTemplate.name === routeData.baseTemplate) {
+                                msgPackage.result.baseTemplate = baseTemplate;
+                            }
+                        });
+                    }
+                    //else use first base template
+                    if (!msgPackage.result.baseTemplate) {
+                        self.baseTemplates[0];
+                    }
+                    msgPackage.result.routeData = routeData;
+                    msgPackage.result.version = self.version;
+                })();
             } else {
                 msgPackage.error = 'No url passed';
             }
             break;
         case 'getSiteData':
-            msgPackage.result = self.site;
+            msgPackage.result.baseTemplates = self.baseTemplates;
             msgPackage.result.version = self.version;
             break;
         case 'getVersion':
@@ -1282,10 +1306,10 @@ self.addEventListener('fetch', function (event) {
             }
             return response;
         }));
-    } else if (routeData && event.request.headers.get('X-Ghost-Worker-Content') !== 'raw') {
+    } else if (routeData && event.request.headers.get('X-GhostWorker-Content') !== 'raw') {
 
         // templates
-        var templateRequest = new Request(Utils.urlReplacePath(event.request.url, routeData.templatePath), {});
+        var templateRequest = new Request(Utils.urlReplacePath(event.request.url, routeData.template.templatePath), {});
         event.respondWith(caches.match(templateRequest).then(function (response) {
 
             // if found response with template and instructions to add JSON
@@ -1324,8 +1348,6 @@ self.addEventListener('install', listeners.installListener);
 self.addEventListener('activate', listeners.activateListener);
 self.addEventListener('fetch', listeners.fetchListener);
 */
-
-return index;
 
 })));
 //# sourceMappingURL=ghostworker-sw.js.map

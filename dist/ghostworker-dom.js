@@ -936,20 +936,21 @@ var GhostWorkerDOM = function () {
         var url = document.location.href;
         //this.createJSON(document, url);
 
-        Messaging.getSiteData().then(function (siteData) {
+        Messaging.getRouteData(url).then(function (data) {
 
-            if (siteData) {
-                self.createJSON(document, url, siteData);
-                self.match(Utils.urlReplacePath(url, siteData.templatePath), '-template').then(function (response) {
+            if (data) {
+                self.createJSON(document, url, data.version);
+                // check for base template
+                self.match(Utils.urlReplacePath(url, data.baseTemplate.templatePath), '-template').then(function (response) {
                     // create base template first
                     if (response.error) {
-                        self.createTemplate(document, url, siteData, siteData);
+                        self.createTemplate(document, url, data.baseTemplate, data.version);
                     }
                     // then build route template
-                    self.createTemplate(document, url, null, siteData);
+                    self.createTemplate(document, url, data.routeData.template, data.version);
                 });
             } else {
-                this.createTemplate(document, url, null, siteData);
+                this.createTemplate(document, url, null, data.version);
             }
             // fire off as we have all the HTML loaded before we create templates
             document.dispatchEvent(self.contentDOMLoadedEvent);
@@ -960,8 +961,8 @@ var GhostWorkerDOM = function () {
 
         var self = this;
 
-        return Messaging.getRouteData(url).then(function (routeData) {
-            var request = self.newRequest(Utils.urlReplacePath(url, routeData.templatePath), {});
+        return Messaging.getRouteData(url).then(function (data) {
+            var request = self.newRequest(Utils.urlReplacePath(url, data.routeData.template.templatePath), {});
             return window.caches.match(request);
         }).then(function (response) {
             return response ? true : false;
@@ -969,7 +970,7 @@ var GhostWorkerDOM = function () {
     };
 
     // creates JSON from full DOM
-    m.createJSON = function (doc, url, siteData) {
+    m.createJSON = function (doc, url, version) {
 
         // create json object
         var self = this;
@@ -977,9 +978,10 @@ var GhostWorkerDOM = function () {
         out.replacements = [];
         //var routeData = Messaging.getRouteData( url );
 
-        return Messaging.getRouteData(url).then(function (routeData) {
+        return Messaging.getRouteData(url).then(function (data) {
 
-            routeData.elements.forEach(function (selector) {
+            var template = data.routeData.template;
+            template.elements.forEach(function (selector) {
                 var nodeList = doc.querySelectorAll(selector);
                 var item = {
                     selector: selector,
@@ -998,7 +1000,7 @@ var GhostWorkerDOM = function () {
             headers.append('X-Ghost-Worker-Cache-Date', new Date().toISOString());
             self.jsonRequest = self.newRequest(Utils.urlJoinPath(url, '-json'), { 'headers': headers });
             self.jsonResponse = self.newResponse(JSON.stringify(out), 'application/json');
-            self.put(self.cacheName + '-' + routeData.slug + '-v' + routeData.version, self.jsonRequest, self.jsonResponse);
+            self.put(self.cacheName + '-' + template.slug + '-v' + version, self.jsonRequest, self.jsonResponse);
 
             return out;
         }).catch(function (reason) {
@@ -1009,7 +1011,7 @@ var GhostWorkerDOM = function () {
     };
 
     // creates template from full DOM
-    m.createTemplate = function (doc, url, routeData, siteData) {
+    m.createTemplate = function (doc, url, routeData, version) {
 
         // create html template
         var self = this;
@@ -1030,7 +1032,7 @@ var GhostWorkerDOM = function () {
             headers.append('X-Ghost-Worker-Cache-Date', new Date().toISOString());
             self.templateRequest = self.newRequest(Utils.urlReplacePath(url, routeData.templatePath), { 'headers': headers });
             self.templateResponse = self.newResponse(newDoc.outerHTML, 'text/html');
-            self.put(self.cacheName + '-template-v' + routeData.version, self.templateRequest, self.templateResponse);
+            self.put(self.cacheName + '-template-v' + version, self.templateRequest, self.templateResponse);
             return newDoc.outerHTML;
         }).catch(function (reason) {
             console.log('createTemplate: ' + reason);
@@ -1094,16 +1096,16 @@ var GhostWorkerDOM = function () {
         var self = this;
         url = url || document.location.href;
 
-        var routeData = Messaging.getRouteData(url);
-
+        // get route data
         Promise.all([Messaging.getSiteData(), Messaging.getRouteData(url)]).then(function (results) {
             var siteData = results[0];
-            var routeData = results[1];
+            var data = results[1];
+            var template = data.routeData.template;
 
             // add header so the template logic is not fired in service worker
             var headers = new Headers();
-            headers.append('X-Ghost-Worker-Content', 'raw');
-            headers.append('X-Ghost-Worker-RouteData', JSON.stringify(routeData));
+            headers.append('X-GhostWorker-Content', 'raw');
+            headers.append('X-GhostWorker-RouteData', JSON.stringify(template));
 
             var request = new Request(url, { headers: headers });
 
@@ -1114,19 +1116,20 @@ var GhostWorkerDOM = function () {
                 // has a site template info
 
                 // does current template match new template
-                if (siteData && redrawLevel === 'site') {
-                    // default to site template
-                    self.clearElements(document, siteData.elements);
+                if (redrawLevel === 'site') {
+                    // default to base template
+                    self.clearElements(document, data.baseTemplate.elements);
                     Head.remove(document.querySelector('head'));
 
-                    // load template from cache
-                    var templateRequest = self.newRequest(Utils.urlReplacePath(url, routeData.templatePath), {});
+                    // load section template from cache
+                    var templateRequest = self.newRequest(Utils.urlReplacePath(url, template.templatePath), {});
                     // *********************************************************************************************************** //
                     self.match(templateRequest, '-template').then(function (templateJSON) {
-                        if (!templateJSON) {
+                        if (!templateJSON || templateJSON.error) {
                             console.log('addJSON no template found');
                         } else {
-                            self.injectTemplateJSON(templateJSON).then(function (done) {
+                            console.log('using a section template');
+                            self.injectTemplateJSON(templateJSON, data.baseTemplate).then(function (done) {
                                 if (!json.error) {
                                     self.injectJSON(json, true);
                                 }
@@ -1141,7 +1144,7 @@ var GhostWorkerDOM = function () {
 
                 // get it from network inject either to add or update content
                 // *********************************************************************************************************** //
-                self.createJSONFromNetwork(request, siteData).then(function (json) {
+                self.createJSONFromNetwork(request, data.version).then(function (json) {
                     if (json && !json.error) {
                         self.injectJSON(json, false);
                     } else {
@@ -1157,7 +1160,7 @@ var GhostWorkerDOM = function () {
     };
 
     // get JSON form network - downloads HTML and creates JSON structure
-    m.createJSONFromNetwork = function (request, siteData) {
+    m.createJSONFromNetwork = function (request, version) {
 
         var self = this;
         return fetch(request).then(function (response) {
@@ -1168,7 +1171,7 @@ var GhostWorkerDOM = function () {
                     var parser = new DOMParser();
                     return parser.parseFromString(body, "text/html");
                 }).then(function (doc) {
-                    return self.createJSON(doc, request.url, siteData);
+                    return self.createJSON(doc, request.url, version);
                 });
             } else {
                 return { error: 'response issue' };
@@ -1197,12 +1200,28 @@ var GhostWorkerDOM = function () {
         });
     };
 
-    m.injectTemplateJSON = function (json) {
+    m.injectTemplateJSON = function (json, baseTemplate) {
 
         var parser = new DOMParser();
         var doc = parser.parseFromString(json.template, "text/html");
 
+        console.log('injectTemplateJSON');
+
+        baseTemplate.elements.forEach(function (selector) {
+            var destination = document.querySelector(selector);
+            var source = doc.querySelector(selector);
+            if (destination && source) {
+                destination.parentNode.replaceChild(source, destination);
+            } else {
+                console.log('issue injecting section template into base template');
+            }
+        });
+        return Promise.resolve();
+
         // copy elements between documents to recreate a route template
+
+
+        /*
         return Messaging.getSiteData().then(function (siteDate) {
             if (siteDate && siteDate.elements) {
                 siteDate.elements.forEach(function (selector) {
@@ -1213,6 +1232,7 @@ var GhostWorkerDOM = function () {
             }
             return true;
         });
+        */
     };
 
     m.injectJSON = function (json, firstDraw) {
@@ -1268,26 +1288,28 @@ var GhostWorkerDOM = function () {
         Promise.all([Messaging.getRouteData(documentUrl.toString()), Messaging.getRouteData(targetUrl.toString())]).then(function (results) {
             console.log(JSON.stringify(results));
 
-            var documentRouteData = results[0];
-            var targetRouteData = results[1];
+            var documentData = results[0];
+            var targetData = results[1];
 
             // both current and target URLs are part of routing system
-            if (documentRouteData && targetRouteData) {
+            if (documentData && targetData) {
 
                 // they are from the same section - match on section template name
-                if (targetRouteData.templatePath === documentRouteData.templatePath) {
+                if (documentData.routeData.template.templatePath === targetData.routeData.template.templatePath) {
 
-                    console.log('uses same template - load just json');
+                    console.log('uses same base template - load just json');
                     GhostWorkerDOM.addJSON(targetUrl.toString(), 'route');
                     history.pushState({}, '', targetUrl.toString());
                 } else {
 
-                    // route is in system but uses a different route template
+                    // route is in system but uses a different base template
                     GhostWorkerDOM.hasTemplate(targetUrl.toString()).then(function (hasTemplate) {
-                        if (hasTemplate === true) {
+                        if (documentData.baseTemplate.name === targetData.baseTemplate.name) {
+                            // same base template just update base template elements
                             GhostWorkerDOM.addJSON(targetUrl.toString(), 'site');
                             history.pushState({}, '', targetUrl.toString());
                         } else {
+                            // full page reload allowing whole dom to redraw and new context for js
                             console.log('let HTTP request pass through');
                             document.location.href = targetUrl.toString();
                         }
