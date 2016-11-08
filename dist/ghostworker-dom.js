@@ -16,6 +16,9 @@ var utils = createCommonjsModule(function (module) {
   'use strict';
 
   function removeLastBackslash(path) {
+    if (path === '/') {
+      return path;
+    }
     return endsWith(path, '/') ? path.slice(0, -1) : path;
   }
 
@@ -935,6 +938,7 @@ var GhostWorkerDOM = function () {
         var self = this;
         var url = document.location.href;
         //this.createJSON(document, url);
+        console.log('create template and json for: ' + url);
 
         Messaging.getRouteData(url).then(function (data) {
 
@@ -1004,7 +1008,7 @@ var GhostWorkerDOM = function () {
 
             return out;
         }).catch(function (reason) {
-            console.log('createJSON: ' + reason);
+            console.log('createJSON failed: ' + reason);
         });
 
         //return out;
@@ -1035,7 +1039,7 @@ var GhostWorkerDOM = function () {
             self.put(self.cacheName + '-template-v' + version, self.templateRequest, self.templateResponse);
             return newDoc.outerHTML;
         }).catch(function (reason) {
-            console.log('createTemplate: ' + reason);
+            console.log('createTemplate failed: ' + reason);
         });
     };
 
@@ -1095,6 +1099,7 @@ var GhostWorkerDOM = function () {
 
         var self = this;
         url = url || document.location.href;
+        console.log('load clientside template and json for: ' + url);
 
         // get route data
         Promise.all([Messaging.getSiteData(), Messaging.getRouteData(url)]).then(function (results) {
@@ -1138,6 +1143,7 @@ var GhostWorkerDOM = function () {
                     });
                 } else {
                     if (!json.error) {
+                        console.log('using a section template');
                         self.injectJSON(json, true);
                     }
                 }
@@ -1145,13 +1151,21 @@ var GhostWorkerDOM = function () {
                 // get it from network inject either to add or update content
                 // *********************************************************************************************************** //
                 self.createJSONFromNetwork(request, data.version).then(function (json) {
-                    if (json && !json.error) {
-                        self.injectJSON(json, false);
-                    } else {
-                        console.log('createJSONFromNetwork');
-                    }
+                    self.injectJSON(json, false);
                 }).catch(function (reason) {
-                    console.log('createJSONFromNetwork' + reason);
+                    if (reason === 'fetch error') {
+                        if (!json) {
+                            // fetch error and no catch version
+                            document.location.href = '\offline';
+                        }
+                        // fetch error but we have a cahed version
+                    } else {
+                        if (Utils.endsWith(reason, '404')) {
+                            // 404 error
+                            document.location.href = '\notfound';
+                        }
+                    }
+                    // otherwise to not update or reload
                 });
             });
         }).catch(function (reason) {
@@ -1166,7 +1180,6 @@ var GhostWorkerDOM = function () {
         return fetch(request).then(function (response) {
 
             if (request.method === 'GET' && response.status > 199 && response.status < 400) {
-
                 return response.text().then(function (body) {
                     var parser = new DOMParser();
                     return parser.parseFromString(body, "text/html");
@@ -1174,10 +1187,12 @@ var GhostWorkerDOM = function () {
                     return self.createJSON(doc, request.url, version);
                 });
             } else {
-                return { error: 'response issue' };
+                return Promise.reject('response error' + response.status);
             }
         }).catch(function (reason) {
             console.log('createJSONFromNetwork', reason);
+            return Promise.reject('fetch error');
+            //document.location.href = '\offline'
         });
     };
 
@@ -1204,8 +1219,6 @@ var GhostWorkerDOM = function () {
 
         var parser = new DOMParser();
         var doc = parser.parseFromString(json.template, "text/html");
-
-        console.log('injectTemplateJSON');
 
         baseTemplate.elements.forEach(function (selector) {
             var destination = document.querySelector(selector);
@@ -1278,7 +1291,7 @@ var GhostWorkerDOM = function () {
     };
 
     m.clickEvent = function (e) {
-        console.log('link fired');
+        console.log('captured link fired');
 
         var documentUrl = new URL(document.location.href);
         var targetUrl = new URL(e.currentTarget.href);
@@ -1286,7 +1299,7 @@ var GhostWorkerDOM = function () {
         e.preventDefault();
 
         Promise.all([Messaging.getRouteData(documentUrl.toString()), Messaging.getRouteData(targetUrl.toString())]).then(function (results) {
-            console.log(JSON.stringify(results));
+            //console.log(JSON.stringify(results));
 
             var documentData = results[0];
             var targetData = results[1];
@@ -1304,7 +1317,7 @@ var GhostWorkerDOM = function () {
 
                     // route is in system but uses a different base template
                     GhostWorkerDOM.hasTemplate(targetUrl.toString()).then(function (hasTemplate) {
-                        if (documentData.baseTemplate.name === targetData.baseTemplate.name) {
+                        if (hasTemplate && documentData.baseTemplate.name === targetData.baseTemplate.name) {
                             // same base template just update base template elements
                             GhostWorkerDOM.addJSON(targetUrl.toString(), 'site');
                             history.pushState({}, '', targetUrl.toString());

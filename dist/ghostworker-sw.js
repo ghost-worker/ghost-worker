@@ -18,6 +18,9 @@ var utils = createCommonjsModule(function (module) {
   'use strict';
 
   function removeLastBackslash(path) {
+    if (path === '/') {
+      return path;
+    }
     return endsWith(path, '/') ? path.slice(0, -1) : path;
   }
 
@@ -1057,7 +1060,11 @@ var internals = {
             }
             return response.clone();
         }).catch(function (reason) {
-            console.log('sw fetch fail', reason);
+            console.log('GhostWorker sw fetch fail', reason);
+
+            // if (cxt.offline && event.request.headers.get('Accept').indexOf('text/html') !== -1) {
+            //     return caches.match(new Request(cxt.offline));
+            // }
         });
     },
 
@@ -1191,6 +1198,26 @@ var internals = {
             }
             self.baseTemplates.push(template);
         });
+
+        self.preCache = options.preCache;
+        if (!self.preCache) {
+            self.preCache = [];
+        }
+        ['offline', 'notFound', 'error'].forEach(function (item) {
+            if (options[item]) {
+                self.appendArray(self.preCache, options[item]);
+                self[item] = options[item];
+            }
+        });
+    },
+
+    appendArray: function appendArray(arr, item) {
+        if (Array.isArray(arr) && item) {
+            if (arr.indexOf(item) === -1) {
+                arr.push(item);
+            }
+        }
+        return arr;
     },
 
     // external interface for adding section level options
@@ -1222,6 +1249,45 @@ var internals = {
                 self.routeMap[self.router.route('get', path).route].push(options);
             }
         });
+    },
+
+    hasPreCache: function hasPreCache() {
+        var self = internals;
+        var cacheName = 'ghostworker-precache-v' + self.version;
+        return caches.has(cacheName);
+    },
+
+    hasPreCache2: function hasPreCache2() {
+        var has = false;
+        return caches.keys().then(function (keyList) {
+            keyList.forEach(function (key) {
+                if (key.indexOf('ghostworker-precache-v') === 0) {
+                    has = true;
+                }
+            });
+            return Promise.resolve(has);
+        });
+    },
+
+    loadPreCache: function loadPreCache() {
+        var self = internals;
+        var cacheName = 'ghostworker-precache-v' + self.version;
+
+        return self.hasPreCache2().then(function (has) {
+            // only load if precache is not already built
+            if (has === false) {
+                // return when loaded
+                return caches.open('ghostworker-precache-v' + self.version).then(function (cache) {
+                    return cache.addAll(self.preCache);
+                }).catch(function (reason) {
+                    console.log(reason);
+                });
+            } else {
+                return Promise.resolve();
+            }
+        }).catch(function (reason) {
+            console.log(reason);
+        });
     }
 
 };
@@ -1229,25 +1295,33 @@ var internals = {
 self.addEventListener('activate', function (event) {
 
     // delete any caches that have the wrong version number
-    var self = internals;
+    var cxt = internals;
     event.waitUntil(caches.keys().then(function (keys) {
         return Promise.all(keys.map(function (key) {
-            if (!self.isValidCache(key)) {
-                console.log('delete', key);
+            if (!cxt.isValidCache(key)) {
+                console.log('GhostWorker delete cache:', key);
                 return caches.delete(key);
             } else {
-                console.log('keep', key);
+                console.log('GhostWorker keep cache:', key);
             }
         }));
     }).then(function () {
-        console.log('GhostWorker activated cache: v' + self.version);
+        console.log('GhostWorker activated cache: v' + cxt.version);
+    }));
+});
+
+self.addEventListener('install', function (event) {
+
+    var cxt = internals;
+    event.waitUntil(cxt.loadPreCache().then(function () {
+        return self.skipWaiting();
     }));
 });
 
 self.addEventListener('message', function (event) {
     //console.log('Handling message event:', event);
 
-    var self = internals;
+    var cxt = internals;
     var msgPackage = Utils.clone(event.data);
     msgPackage.result = {};
     switch (msgPackage.command) {
@@ -1256,10 +1330,10 @@ self.addEventListener('message', function (event) {
         case 'getRouteData':
             if (msgPackage.url) {
                 (function () {
-                    var routeData = self.getRouteData(msgPackage.url);
+                    var routeData = cxt.getRouteData(msgPackage.url);
                     // find base template by name
                     if (routeData.baseTemplate) {
-                        self.baseTemplates.forEach(function (baseTemplate) {
+                        cxt.baseTemplates.forEach(function (baseTemplate) {
                             if (baseTemplate.name && baseTemplate.name === routeData.baseTemplate) {
                                 msgPackage.result.baseTemplate = baseTemplate;
                             }
@@ -1267,21 +1341,21 @@ self.addEventListener('message', function (event) {
                     }
                     //else use first base template
                     if (!msgPackage.result.baseTemplate) {
-                        self.baseTemplates[0];
+                        cxt.baseTemplates[0];
                     }
                     msgPackage.result.routeData = routeData;
-                    msgPackage.result.version = self.version;
+                    msgPackage.result.version = cxt.version;
                 })();
             } else {
                 msgPackage.error = 'No url passed';
             }
             break;
         case 'getSiteData':
-            msgPackage.result.baseTemplates = self.baseTemplates;
-            msgPackage.result.version = self.version;
+            msgPackage.result.baseTemplates = cxt.baseTemplates;
+            msgPackage.result.version = cxt.version;
             break;
         case 'getVersion':
-            msgPackage.result = self.version;
+            msgPackage.result = cxt.version;
             break;
         default:
             // This will be handled by the outer .catch().
@@ -1294,12 +1368,13 @@ self.addEventListener('message', function (event) {
 
 self.addEventListener('fetch', function (event) {
 
-    var self = internals;
+    var cxt = internals;
     var requestURL = new URL(Utils.urlRemoveBackslash(event.request.url));
-    var routeData = self.getRouteData(requestURL);
+    var routeData = cxt.getRouteData(requestURL);
 
     if (Utils.endsWith(requestURL.pathname, '-json') || Utils.endsWith(requestURL.pathname, '-template')) {
 
+        console.log('SW: -json or -template request:', requestURL.toString());
         event.respondWith(caches.match(event.request).then(function (response) {
             if (response) {
                 return response;
@@ -1308,31 +1383,56 @@ self.addEventListener('fetch', function (event) {
         }));
     } else if (routeData && event.request.headers.get('X-GhostWorker-Content') !== 'raw') {
 
+        // make sure we have preloaded items
+        cxt.loadPreCache();
+
         // templates
         var templateRequest = new Request(Utils.urlReplacePath(event.request.url, routeData.template.templatePath), {});
         event.respondWith(caches.match(templateRequest).then(function (response) {
 
             // if found response with template and instructions to add JSON
             if (response) {
-                return self.injectCommand(response, 'GhostWorkerDOM.addJSON();');
+                console.log('SW: inject command Add:', requestURL.toString());
+                return cxt.injectCommand(response, 'GhostWorkerDOM.addJSON();');
             } else {
 
                 // use real request object
                 return fetch(event.request).then(function (response) {
                     // with first response add instructions to create template and JSON
-                    return self.injectCommand(response, 'GhostWorkerDOM.create();');
+                    console.log('SW: inject command Create:', requestURL.toString());
+                    return cxt.injectCommand(response, 'GhostWorkerDOM.create();');
                 }).catch(function (reason) {
-                    console.log('sw fetch fail', reason);
+                    console.log('GhostWorker sw fetch fail', reason);
+
+                    if (cxt.offline && event.request.headers.get('Accept').indexOf('text/html') !== -1) {
+                        var offlineRequest = new Request(Utils.urlReplacePath(event.request.url, cxt.offline), {});
+                        return caches.match(offlineRequest).then(function (response) {
+                            return response;
+                        });
+                    }
                 });
             }
         }));
     } else {
         // everthing else
+
+        // make sure we have preloaded items
+        if (event.request.headers.get('Accept').indexOf('text/html') !== -1) {
+            cxt.loadPreCache();
+        }
+
         event.respondWith(caches.match(event.request).then(function (response) {
             if (response) {
+                // only refetch html resources
+                // if (event.request.headers.get('Accept').indexOf('text/html') !== -1) {
+                //     cxt.fetchAndCache(event.request, {});
+                // }
                 return response;
+            } else {
+                return cxt.fetchAndCache(event.request, {});
             }
-            return self.fetchAndCache(event.request, {});
+            //console.log('SW: add to general cache:', requestURL.toString() );
+            //return cxt.fetchAndCache(event.request, {});
         }));
     }
 });
